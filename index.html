@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meadsloch Downs — Axebeak Races</title>
+<style>
+  :root{
+    --bg:#1669b2; /* track blue */
+    --panel:#0f4980;
+    --ink:#eef3ff;
+    --muted:#c9d9ff;
+    --accent:#ffd86b;
+    --ok:#33d17a; --warn:#f6c744; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,
+       "Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--ink)}
+  header{display:flex;align-items:center;gap:16px;padding:18px 20px;border-bottom:2px solid rgba(255,255,255,.15)}
+  header img{height:64px}
+  h1{margin:0;font-size:clamp(22px,4vw,36px);letter-spacing:.5px}
+  .wrap{display:grid;grid-template-columns:1fr;gap:16px;padding:16px;max-width:1200px;margin:0 auto}
+  .row{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width:980px){.row{grid-template-columns: 1.1fr .9fr}}
+  .card{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:14px 16px;backdrop-filter:blur(3px)}
+  .card h2{margin:.2rem 0 8px;font-size:22px}
+  .small{font-size:13px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.12)}
+  th{text-align:left;color:var(--muted);font-weight:600}
+  td.odds{font-variant-numeric: tabular-nums}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+  select,input,button{font:inherit;border-radius:10px;border:1px solid rgba(255,255,255,.15);padding:10px 12px;background:rgba(255,255,255,.08);color:var(--ink)}
+  input[type=number]{width:110px}
+  button{cursor:pointer;background:linear-gradient(180deg, #ffd86b, #ffb938);color:#1a1600;border:none;font-weight:700}
+  button.secondary{background:rgba(255,255,255,.08);color:var(--ink);border:1px solid rgba(255,255,255,.25)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .grid-bets{display:grid;grid-template-columns: repeat(1, minmax(0,1fr));gap:12px}
+  @media (min-width:700px){.grid-bets{grid-template-columns: repeat(2, minmax(0,1fr))}}
+  @media (min-width:1100px){.grid-bets{grid-template-columns: repeat(3, minmax(0,1fr))}}
+  .laneWrap{padding:10px 14px}
+  .track{position:relative;height:420px;border-radius:16px;background:linear-gradient(#175a97,#124a80);box-shadow: inset 0 0 0 3px rgba(255,255,255,.15)}
+  .lane{position:absolute;left:0;right:0;height:calc(100%/8);border-top:1px dashed rgba(255,255,255,.25)}
+  .lane:first-child{border-top:none}
+  .ax{position:absolute;height:44px;top:0;left:0;transform:translateY(-50%)}
+  .finish{position:absolute;right:24px;top:0;bottom:0;width:4px;background: repeating-linear-gradient(180deg,#fff 0 14px, transparent 14px 28px)}
+  .meter{margin-top:8px;font-variant-numeric: tabular-nums}
+  .leaders{display:flex;gap:10px;align-items:center}
+  .pill{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15)}
+  .center{text-align:center}
+  .rsg{font-weight:800; font-size:40px; letter-spacing:1px}
+  .hidden{display:none}
+  .mono{font-variant-numeric: tabular-nums}
+  .payoutWin{color:var(--ok)}.payoutLose{color:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <img src="assets/logo.png" onerror="this.style.display='none'" alt=""/>
+  <div>
+    <h1>Meadsloch Downs — Axebeak Races</h1>
+    <div class="small">Race <span id="raceNo">0000</span> • Player view pops a clean window for audience screens.</div>
+  </div>
+  <div style="margin-left:auto; display:flex; gap:10px">
+    <button id="popBtn" class="secondary" title="Open player view">Pop Player View</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="screenBet" class="row">
+    <section class="card">
+      <h2>Next Race — Card</h2>
+      <div class="small">Odds are chance to win this race (lower is better). Names come from <code>assets/names.txt</code> if present.</div>
+      <table id="tblCard">
+        <thead><tr><th>#</th><th>Axebeak</th><th class="mono">Odds</th><th class="mono">Win%</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="center" style="margin-top:12px">
+        <button id="startBtn" style="min-width:220px">Start Race</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Bets (up to 6)</h2>
+      <div class="grid-bets" id="bets"></div>
+      <div class="small" style="margin-top:10px">Payouts: Win = full, Place = 1/2, Show = 1/3 (rounded down to the nearest silver).</div>
+    </section>
+  </div>
+
+  <div id="screenRace" class="card hidden">
+    <div class="center rsg" id="rsg">Ready…</div>
+    <div class="laneWrap">
+      <div class="track" id="track">
+        <div class="finish"></div>
+      </div>
+      <div class="leaders small" style="margin-top:10px">
+        Leaders: <span class="pill" id="lead1">—</span><span class="pill" id="lead2">—</span><span class="pill" id="lead3">—</span>
+        <span class="pill" id="timer" style="margin-left:auto">0.0s</span>
+      </div>
+    </div>
+    <div id="resultArea" class="hidden">
+      <h2>Results</h2>
+      <div id="podium" class="small"></div>
+      <h3 style="margin-top:10px">Payouts</h3>
+      <div id="payouts"></div>
+      <div class="center" style="margin-top:14px">
+        <button id="newRaceBtn">New Race</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Player view mode detection ---
+const url = new URL(location.href);
+const isPlayerView = url.searchParams.get('view') === 'player';
+
+// Broadcast channel to sync with player view
+const chan = new BroadcastChannel('axebeak-downs');
+function send(msg){ try{ chan.postMessage(msg); }catch(e){} }
+chan.onmessage = (ev)=>{ if(isPlayerView){ handleIncoming(ev.data); } };
+
+// State
+let card = []; // [{id:1..8, name, odds, winProb}]
+let raceNumber = '0000';
+let namesPool = [];
+let bets = []; // 6 entries
+let raceOrder = []; // [winner, second, third, ...]
+let running = false;
+
+// Utility helpers
+const rand = (n)=>Math.floor(Math.random()*n);
+const choice = (arr)=>arr[rand(arr.length)];
+const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+
+function gpToText(amountGP){
+  // round down to nearest silver
+  const spTotal = Math.floor(amountGP * 10 + 1e-6); // sp
+  const gp = Math.floor(spTotal/10);
+  const sp = spTotal - gp*10;
+  let out = `${gp} gp`;
+  if(sp>0) out += ` ${sp} sp`;
+  return out;
+}
+
+// Build betting rows
+const betsRoot = document.getElementById('bets');
+for(let i=0;i<6;i++){
+  const wrap = document.createElement('div');
+  wrap.className='card';
+  wrap.innerHTML = `
+    <div class="small">Bet ${i+1}</div>
+    <div class="controls">
+      <label>Bet Type<br>
+        <select data-key="type">
+          <option value="win">Win</option>
+          <option value="place">Place</option>
+          <option value="show">Show</option>
+        </select>
+      </label>
+      <label>Axebeak<br>
+        <select data-key="pick"></select>
+      </label>
+      <label>Wager (gp)<br>
+        <input data-key="amt" type="number" min="1" step="1" value="" placeholder="1"/>
+      </label>
+      <button class="secondary" data-key="clear">Clear</button>
+    </div>
+    <div class="small" data-key="summary">—</div>
+  `;
+  betsRoot.appendChild(wrap);
+}
+
+function refreshBetPickers(){
+  document.querySelectorAll('select[data-key="pick"]').forEach(sel=>{
+    sel.innerHTML = '<option value="">— choose —</option>' + card.map(r=>`<option value="${r.id}">${r.id}. ${r.name}</option>`).join('');
+  });
+}
+
+function collectBets(){
+  bets = [];
+  document.querySelectorAll('#bets > .card').forEach((wrap,idx)=>{
+    const type = wrap.querySelector('select[data-key="type"]').value;
+    const pick = parseInt(wrap.querySelector('select[data-key="pick"]').value||0,10);
+    const amt = parseInt(wrap.querySelector('input[data-key="amt"]').value||0,10);
+    const sum = wrap.querySelector('[data-key="summary"]');
+    if(pick && amt>=1){
+      const r = card.find(x=>x.id===pick);
+      const text = `${type.toUpperCase()} on ${r ? r.name : '—'} — ${amt} gp at 1:${r.odds}`;
+      sum.textContent = text;
+      bets.push({idx,type,pick,amt});
+    }else{
+      sum.textContent = '—';
+    }
+  });
+}
+
+betsRoot.addEventListener('change', collectBets);
+
+betsRoot.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-key="clear"]');
+  if(!btn) return;
+  const wrap = btn.closest('.card');
+  wrap.querySelector('select[data-key="pick"]').value = '';
+  wrap.querySelector('input[data-key="amt"]').value = '';
+  wrap.querySelector('[data-key="summary"]').textContent = '—';
+  collectBets();
+});
+
+// Load names from assets/names.txt (one per line)
+async function loadNames(){
+  try{
+    const r = await fetch('assets/names.txt', {cache:'no-cache'});
+    if(!r.ok) throw new Error('no names');
+    const t = await r.text();
+    namesPool = t.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  }catch(e){
+    namesPool = [];
+  }
+}
+
+// Generate a race card
+function newRaceCard(){
+  raceNumber = String(1000 + rand(9000));
+  document.getElementById('raceNo').textContent = raceNumber;
+
+  // pick 8 names
+  const names = [];
+  for(let i=1;i<=8;i++){
+    let nm = namesPool.length ? namesPool.splice(rand(namesPool.length),1)[0] : `Axebeak ${i}`;
+    names.push(nm);
+  }
+
+  // weighted odds sampling, longshots rare
+  const possible = [1,2,3,4,5,6,8,10,12,15,20,25,30,40,54];
+  const weights  = [10,9,8,8,7,6,6,5,4,3,2,2,1,1,1]; // favor low odds
+
+  card = names.map((name,idx)=>{
+    const o = weightedChoice(possible, weights);
+    return {id: idx+1, lane: idx+1, name, odds: o, winProb: 1/o};
+  });
+
+  // Normalize win probabilities so they look nice (for display only)
+  const sum = card.reduce((a,b)=>a + 1/b.odds, 0);
+  card.forEach(r=> r.winPct = ( (1/r.odds)/sum * 100));
+
+  // Draw table
+  const tbody = document.querySelector('#tblCard tbody');
+  tbody.innerHTML = card.map(r=>`
+    <tr><td>${r.id}</td><td>${r.name}</td><td class="odds">1:${r.odds}</td><td class="odds">${r.winPct.toFixed(1)}%</td></tr>
+  `).join('');
+
+  refreshBetPickers();
+  collectBets();
+
+  send({type:'card', raceNumber, card});
+}
+
+function weightedChoice(items, weights){
+  const total = weights.reduce((a,b)=>a+b,0);
+  let n = Math.random()*total;
+  for(let i=0;i<items.length;i++){
+    if(n < weights[i]) return items[i];
+    n -= weights[i];
+  }
+  return items[items.length-1];
+}
+
+// Determine finish order with probabilities ~ 1/odds
+function pickFinishOrder(){
+  const pool = [...card];
+  const order = [];
+  let local = pool.map(r=>({r, w: 1/r.odds}));
+  for(let k=0;k<8;k++){
+    const total = local.reduce((a,b)=>a+b.w,0);
+    let x = Math.random()*total;
+    let pick = local[0];
+    for(const it of local){ if(x<it.w){ pick = it; break;} x -= it.w; }
+    order.push(pick.r);
+    local = local.filter(it=>it!==pick);
+  }
+  return order; // index 0 is winner
+}
+
+// Race simulation
+let sim = null;
+function startRace(){
+  if(running) return; running = true;
+  // Precompute order
+  raceOrder = pickFinishOrder();
+
+  // Build lanes on track
+  const track = document.getElementById('track');
+  track.querySelectorAll('.lane').forEach(n=>n.remove());
+  track.querySelectorAll('img.ax').forEach(n=>n.remove());
+
+  const H = track.clientHeight; const W = track.clientWidth; const laneH = H/8;
+  for(let i=0;i<8;i++){
+    const lane = document.createElement('div');
+    lane.className = 'lane';
+    lane.style.top = `${(i+0.5)*laneH}px`;
+    track.appendChild(lane);
+
+    const img = document.createElement('img');
+    img.className='ax';
+    img.style.top = `${(i+0.5)*laneH}px`;
+    img.src = `assets/axebeak${i+1}.gif`;
+    img.alt = `Axebeak ${i+1}`;
+    img.dataset.id = String(i+1);
+    track.appendChild(img);
+  }
+
+  // Countdown
+  const rsg = document.getElementById('rsg');
+  rsg.classList.remove('hidden');
+  rsg.textContent = 'Ready…';
+  document.getElementById('resultArea').classList.add('hidden');
+  document.getElementById('screenBet').classList.add('hidden');
+  document.getElementById('screenRace').classList.remove('hidden');
+
+  send({type:'screen', screen:'race'});
+  send({type:'raceCard', card, raceNumber});
+
+  setTimeout(()=>{ rsg.textContent='Set…';
+    setTimeout(()=>{ rsg.textContent='Go!'; beginMotion();
+      setTimeout(()=>rsg.classList.add('hidden'), 500);
+    }, 700);
+  }, 700);
+}
+
+function beginMotion(){
+  const track = document.getElementById('track');
+  const finishX = track.clientWidth - 60; // leave some right margin
+  const imgs = [...track.querySelectorAll('img.ax')];
+  imgs.forEach((img,i)=>{ img.src = `assets/axebeakrun${i+1}.gif`; });
+
+  const byId = id => card.find(r=>r.id===id);
+  const positions = new Map(); // id -> x
+  imgs.forEach(img=>positions.set(+img.dataset.id, 10));
+
+  const winnerId = raceOrder[0].id;
+  const rankNow = ()=>[...imgs].sort((a,b)=>positions.get(+b.dataset.id)-positions.get(+a.dataset.id)).map(n=>+n.dataset.id);
+
+  let t=0; const start = performance.now();
+  function tick(now){
+    t = (now-start)/1000; // seconds
+
+    imgs.forEach(img=>{
+      const id = +img.dataset.id;
+      const base = 45 + Math.random()*12; // px/s
+      let speed = base;
+      // Give a gentle drift based on odds (slightly faster for better odds)
+      const r = byId(id);
+      speed += (6*(1/r.odds));
+      // Rubber-banding moments for spice
+      if(Math.sin((t+id)*0.9) > 0.85) speed += 18;
+      if(Math.cos((t+id)*0.7) < -0.85) speed -= 12;
+
+      // Ensure predetermined winner pulls ahead near the end
+      let x = positions.get(id);
+      if(id===winnerId){
+        if(x>finishX-180) speed += 65; // final surge
+      }
+      x += speed * (1/60); // approx frame delta
+      x = Math.min(x, finishX);
+      positions.set(id,x);
+      img.style.left = `${x}px`;
+    });
+
+    // leaders
+    const order = rankNow();
+    setLeaderText(order);
+    send({type:'progress', order, t});
+
+    // Check if winner finished
+    if(positions.get(winnerId) >= finishX){
+      endRace(order);
+      return;
+    }
+    sim = requestAnimationFrame(tick);
+  }
+  sim = requestAnimationFrame(tick);
+}
+
+function setLeaderText(order){
+  const nm = id=>card.find(r=>r.id===id)?.name||'';
+  document.getElementById('lead1').textContent = `1st: ${nm(order[0]||0)}`;
+  document.getElementById('lead2').textContent = `2nd: ${nm(order[1]||0)}`;
+  document.getElementById('lead3').textContent = `3rd: ${nm(order[2]||0)}`;
+  const timer = document.getElementById('timer');
+  if(timer.dataset.t0){
+    const dt = (performance.now()-Number(timer.dataset.t0))/1000; timer.textContent = dt.toFixed(1)+'s';
+  } else { timer.dataset.t0 = String(performance.now()); timer.textContent = '0.0s'; }
+}
+
+function endRace(orderNow){
+  cancelAnimationFrame(sim);
+  running = false;
+
+  // lock final order: ensure predetermined order wins, blend current leaders for drama
+  const final = [...new Set([raceOrder[0].id, ...orderNow, ...raceOrder.map(r=>r.id)])].slice(0,8);
+  const podium = final.slice(0,3).map(id=>card.find(r=>r.id===id));
+
+  // Show results
+  const pod = document.getElementById('podium');
+  pod.innerHTML = `<div>1st: <b>${podium[0].name}</b> (1:${podium[0].odds})</div>
+                   <div>2nd: ${podium[1].name} (1:${podium[1].odds})</div>
+                   <div>3rd: ${podium[2].name} (1:${podium[2].odds})</div>`;
+
+  // Compute payouts
+  const out = document.getElementById('payouts');
+  const [w1,w2,w3]=podium.map(p=>p.id);
+  let html = '';
+  collectBets();
+  bets.forEach((b,i)=>{
+    const pick = b.pick, amt = b.amt; const racer = card.find(r=>r.id===pick);
+    const odds = racer.odds; let won = false; let mult = 0;
+    if(b.type==='win' && pick===w1){ won = true; mult = odds; }
+    if(b.type==='place' && (pick===w1||pick===w2)){ won = true; mult = odds/2; }
+    if(b.type==='show' && (pick===w1||pick===w2||pick===w3)){ won = true; mult = odds/3; }
+    const payout = won ? gpToText(amt*mult) : '0 gp';
+    html += `<div class="pill ${won?'payoutWin':'payoutLose'}">Bet ${i+1}: ${b.type.toUpperCase()} on ${racer.name} — wager ${amt} gp → ${payout}</div>`;
+  });
+  out.innerHTML = html || '<div class="small">No valid bets were placed.</div>';
+
+  document.getElementById('resultArea').classList.remove('hidden');
+  send({type:'finish', final, podium, bets});
+}
+
+// --- Player view handling ---
+function handleIncoming(msg){
+  const bet = document.getElementById('screenBet');
+  const race = document.getElementById('screenRace');
+  if(msg.type==='card'){
+    // render betting card only
+    window.__playerCard = msg.card;
+    document.getElementById('raceNo').textContent = msg.raceNumber;
+    document.querySelector('#tblCard tbody').innerHTML = msg.card.map(r=>
+      `<tr><td>${r.id}</td><td>${r.name}</td><td class="odds">1:${r.odds}</td><td class="odds">${r.winPct.toFixed(1)}%</td></tr>`
+    ).join('');
+    bet.classList.remove('hidden');
+    race.classList.add('hidden');
+    // hide betting widgets
+    document.querySelector('section:has(#bets)')?.classList.add('hidden');
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('popBtn').disabled = true;
+  }
+  if(msg.type==='screen' && msg.screen==='race'){
+    bet.classList.add('hidden');
+    race.classList.remove('hidden');
+  }
+  if(msg.type==='raceCard'){
+    window.__playerCard = msg.card; document.getElementById('raceNo').textContent = msg.raceNumber;
+  }
+  if(msg.type==='progress'){
+    const order = msg.order; setLeaderText(order);
+  }
+  if(msg.type==='finish'){
+    // Render podium only; payouts are DM-only and omitted here by design
+    const podium = msg.podium;
+    const pod = document.getElementById('podium');
+    pod.innerHTML = `<div>1st: <b>${podium[0].name}</b> (1:${podium[0].odds})</div>
+                     <div>2nd: ${podium[1].name} (1:${podium[1].odds})</div>
+                     <div>3rd: ${podium[2].name} (1:${podium[2].odds})</div>`;
+    document.getElementById('resultArea').classList.remove('hidden');
+  }
+}
+
+// --- Buttons ---
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click', ()=>{ collectBets(); startRace(); });
+
+document.getElementById('newRaceBtn').addEventListener('click', ()=>{
+  document.getElementById('screenRace').classList.add('hidden');
+  document.getElementById('screenBet').classList.remove('hidden');
+  send({type:'screen', screen:'betting'});
+  // reset timer & leaders
+  document.getElementById('lead1').textContent='—';
+  document.getElementById('lead2').textContent='—';
+  document.getElementById('lead3').textContent='—';
+  document.getElementById('timer').textContent='0.0s';
+  document.getElementById('timer').removeAttribute('data-t0');
+  // make a fresh card
+  // Refill name pool (we already consumed some if from file); reload file for each race
+  loadNames().then(()=> newRaceCard());
+});
+
+// Pop player view (clean audience window)
+const popBtn = document.getElementById('popBtn');
+popBtn.addEventListener('click', ()=>{
+  const w = window.open(location.pathname + '?view=player', 'PlayerView', 'width=1200,height=800');
+  // After a tick, broadcast current card
+  setTimeout(()=> send({type:'card', raceNumber, card}), 300);
+});
+
+// --- Initialize ---
+(async function init(){
+  if(isPlayerView){
+    // hide DM-only widgets immediately
+    document.querySelector('section:has(#bets)')?.classList.add('hidden');
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('popBtn').disabled = true;
+  }
+  await loadNames();
+  newRaceCard();
+})();
+</script>
+</body>
+</html>
