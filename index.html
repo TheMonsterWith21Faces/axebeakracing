@@ -129,7 +129,7 @@
 /***** CONFIG — tweak this knob to set overall spice (0 = calm, 1 = wild) *****/
 const CONFIG = {
   spice: 1,            // ← set between 0.0 and 1.0; higher = more swings & upsets
-  surpriseWeight: 0.88,  // base chance factor for a surprise winner when mood is 'chaos'
+  surpriseWeight: 1,  // base chance factor for a surprise winner when mood is 'chaos'
   // Base parameters for moods [straight, spicy, chaos]
   noise1Base:   [4,  9, 14],
   noise2Base:   [2,  4,  6],
@@ -715,3 +715,4 @@ popBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
