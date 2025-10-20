@@ -51,6 +51,15 @@
   .hidden{display:none}
   .mono{font-variant-numeric: tabular-nums}
   .payoutWin{color:var(--ok)}.payoutLose{color:var(--bad)}
+  .laneBadge{display:inline-block;min-width:1.4em;text-align:center;font-weight:800}
+  .lane1{color:#ff3b30;}   /* red */
+  .lane2{color:#0a84ff;}   /* blue */
+  .lane3{color:#ffd60a;}   /* yellow */
+  .lane4{color:#ff2d55;}   /* pink */
+  .lane5{color:#ffffff;}   /* white */
+  .lane6{color:#30d158;}   /* green */
+  .lane7{color:#a2845e;}   /* brown */
+  .lane8{color:#bf5af2;}   /* purple */
 </style>
 </head>
 <body>
@@ -130,7 +139,6 @@ const CONFIG = {
   gapScaleTop:  [1.00, 0.60, 0.45], // compress top-3 gaps for tenser battles
 };
 
-
 /***** Audio helpers *****/
 function playSfx(id){ const el=document.getElementById(id); if(el){ el.currentTime=0; el.play().catch(()=>{}); } }
 function stopSfx(id){ const el=document.getElementById(id); if(el){ el.pause(); el.currentTime=0; } }
@@ -153,6 +161,8 @@ let sim = null;
 
 /***** Utils *****/
 const rand = (n)=>Math.floor(Math.random()*n);
+const CIRCLED = ['❶','❷','❸','❹','❺','❻','❼','❽'];
+const laneBadgeHTML = (id)=>`<span class="laneBadge lane${id}">${CIRCLED[id-1]||id}</span>`;
 function gpToText(amountGP){
   const spTotal = Math.floor(amountGP * 10 + 1e-6); // round down to nearest silver
   const gp = Math.floor(spTotal/10);
@@ -190,7 +200,8 @@ for(let i=0;i<6;i++){
 
 function refreshBetPickers(){
   document.querySelectorAll('select[data-key="pick"]').forEach(sel=>{
-    sel.innerHTML = '<option value="">— choose —</option>' + card.map(r=>`<option value="${r.id}">${r.id}. ${r.name}</option>`).join('');
+    const opts = card.map(r=>`<option value="${r.id}">${CIRCLED[r.id-1]||r.id} ${r.name}</option>`).join('');
+    sel.innerHTML = '<option value="">— choose —</option>' + opts;
   });
 }
 
@@ -265,7 +276,7 @@ function newRaceCard(){
   card.forEach(r=> r.winPct = ((1/r.odds)/sum*100));
 
   const tbody = document.querySelector('#tblCard tbody');
-  tbody.innerHTML = card.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td class="odds">1:${r.odds}</td><td class="odds">${r.winPct.toFixed(1)}%</td></tr>`).join('');
+  tbody.innerHTML = card.map(r=>`<tr><td>${laneBadgeHTML(r.id)}</td><td>${r.name}</td><td class=\"odds\">1:${r.odds}</td><td class=\"odds\">${r.winPct.toFixed(1)}%</td></tr>`).join('');
 
   refreshBetPickers();
   collectBets();
@@ -339,13 +350,10 @@ function beginMotion(){
   // --- Mood: derived from CONFIG.spice so you can tune globally ---
   function rollRaceMood(){
     const s = Math.max(0, Math.min(1, CONFIG.spice));
-    // Convert spice into probabilities (normalized)
-    // More spice → less straight, more spicy/chaos; still keeps straight races in the mix
-    const pStraight = Math.pow(1 - s, 1.2) * 0.65 + 0.15;  // floor at ~0.15
-    const pChaos    = Math.pow(s, 1.2) * 0.30;             // tops around 0.30
+    const pStraight = Math.pow(1 - s, 1.2) * 0.65 + 0.15;
+    const pChaos    = Math.pow(s, 1.2) * 0.30;
     let pSpicy      = 1 - (pStraight + pChaos);
     if(pSpicy < 0) { pSpicy = 0; }
-    // Pick a mood
     const r = Math.random();
     let idx = 0; // 0=straight,1=spicy,2=chaos
     if(r < pStraight) idx = 0; else if(r < pStraight + pSpicy) idx = 1; else idx = 2;
@@ -357,7 +365,7 @@ function beginMotion(){
     const gTop = CONFIG.gapScaleTop[idx];
     const chaosSurprise = (idx===2 ? CONFIG.surpriseWeight * s : 0);
     const names = ['straight','spicy','chaos'];
-    return {name:names[idx], noise1:n1, noise2:n2, jitter:jit, idealBlend:ib, baselineBlend:bb, gapScaleTop:gTop, chaos:chaosSurprise};
+    return {name:names[idx], noise1:n1, noise2:n2, jitter:jit, idealBlend:ib, baselineBlend:bb, gapScaleTop:gTop, chaos:chaosSurprise, idx};
   }
   const mood = rollRaceMood();
 
@@ -370,14 +378,12 @@ function beginMotion(){
   // Optionally create a surprise winner (rare, weighted by odds to avoid constant longshots)
   let effectiveOrder = [...orderIds];
   if(mood.name==='chaos' && Math.random() < mood.chaos){
-    // choose a mid-pack contender with probability proportional to strength^0.7
     const pool = orderIds.slice(2,6); // 3rd–6th
     const weights = pool.map(id=> Math.pow(strength(card.find(r=>r.id===id).odds), 0.7));
     const total = weights.reduce((a,b)=>a+b,0);
     let x = Math.random()*total; let idx=0;
     for(let i=0;i<pool.length;i++){ if(x<weights[i]){ idx=i; break;} x-=weights[i]; }
     const surprise = pool[idx];
-    // promote to first
     effectiveOrder = [surprise, ...orderIds.filter(id=>id!==surprise)];
   }
 
@@ -393,7 +399,6 @@ function beginMotion(){
     const prevStr = strength(card.find(r=>r.id===prevId).odds);
     const curStr  = strength(card.find(r=>r.id===curId).odds);
     const closeness = Math.min(1, prevStr/curStr);
-    // Baseline gap and mood-based compression for the lead pack (first 3)
     let baseGap = 0.28 + Math.random()*0.28; // 0.28–0.56s
     if(i<3) baseGap *= mood.gapScaleTop; // compress early pack for more duels
     const adjGap = baseGap + (0.35*(1-closeness));
@@ -406,7 +411,7 @@ function beginMotion(){
     const r = card.find(x=>x.id===id);
     state.set(id, {
       x: 10,
-      base: 60 + 120*strength(r.odds), // odds influence baseline
+      base: 60 + 120*strength(r.odds),
       phase: Math.random()*Math.PI*2,
     });
   });
@@ -418,6 +423,9 @@ function beginMotion(){
     return Math.sin((t*0.7) + st.phase) * mood.noise1
          + Math.sin((t*1.9) + st.phase*0.7) * mood.noise2;
   }
+
+  // Track finish flags per axebeak so we can wait for full field
+  const finished = new Set();
 
   // Main loop
   function tick(){
@@ -432,7 +440,7 @@ function beginMotion(){
       const remainingT = Math.max(0.05, targetT - t);
       const remainingX = Math.max(0, finishX - st.x);
 
-      const phase = Math.min(1, t / (winnerBase+1.8)); // later = more stable
+      const phase = Math.min(1, t / (winnerBase+1.8));
 
       const ideal = remainingX / remainingT;
       const baseline = st.base;
@@ -440,27 +448,28 @@ function beginMotion(){
 
       let speed = ideal*mood.idealBlend + baseline*mood.baselineBlend + noise;
 
-      // Jitter varies by mood and odds; fades toward the end
       const jitterAmp = (mood.jitter * (1-phase)) * (0.6 + 0.4*strength(r.odds));
       speed += (Math.random()-0.5) * jitterAmp;
-
-      // Reasonable bounds
       speed = Math.max(40, Math.min(speed, 240));
 
       st.x = Math.min(finishX, st.x + speed*(1/60));
       img.style.left = `${st.x}px`;
+
+      // Mark finished when at/after planned time or visually at finish
+      if(!finished.has(id) && (t >= targetT || st.x >= finishX-0.5)){
+        finished.add(id);
+      }
     });
 
     const order = rankNow();
     setLeaderText(order);
     send({type:'progress', order});
 
-    // End when the intended winner finishes (by time or position)
-    const winnerId = effectiveOrder[0];
-    const tNow = (performance.now()-startT)/1000;
-    if(tNow >= finishTimes.get(winnerId) || state.get(winnerId).x >= finishX){
-      imgs.forEach(img=>{ const id=+img.dataset.id; if(state.get(id).x>finishX-2) { state.get(id).x=finishX; img.style.left = `${finishX}px`; }});
-      endRace(order);
+    // End only when ALL have finished (show full field), with a tiny buffer
+    const allFinished = orderIds.every(id=> finished.has(id));
+    if(allFinished){
+      imgs.forEach(img=>{ const id=+img.dataset.id; if(state.get(id).x>finishX-2){ state.get(id).x=finishX; img.style.left = `${finishX}px`; }});
+      endRace(order, effectiveOrder);
       return;
     }
 
@@ -484,20 +493,26 @@ function setLeaderText(order){
   }
 }
 
-function endRace(orderNow){
+function endRace(orderNow, finalOrderIds){
   cancelAnimationFrame(sim);
   running=false;
   stopSfx('sfxRacing');
   playSfx('sfxEnd');
 
-  const final = [...new Set([raceOrder[0].id, ...orderNow, ...raceOrder.map(r=>r.id)])].slice(0,8);
-  const podium = final.slice(0,3).map(id=>card.find(r=>r.id===id));
+  // Prefer the predetermined (possibly tweaked) final order; fallback to observed order
+  const finalIds = Array.isArray(finalOrderIds) && finalOrderIds.length===8
+    ? finalOrderIds
+    : [...new Set([raceOrder[0].id, ...orderNow, ...raceOrder.map(r=>r.id)])].slice(0,8);
 
+  const podium = finalIds.slice(0,3).map(id=>card.find(r=>r.id===id));
+
+  // Render full standings
   const pod = document.getElementById('podium');
-  pod.innerHTML = `<div>1st: <b>${podium[0].name}</b> (1:${podium[0].odds})</div>
-                   <div>2nd: ${podium[1].name} (1:${podium[1].odds})</div>
-                   <div>3rd: ${podium[2].name} (1:${podium[2].odds})</div>`;
+  const full = finalIds.map((id,i)=>`${i+1}. ${card.find(r=>r.id===id).name} (1:${card.find(r=>r.id===id).odds})`).join('<br>');
+  pod.innerHTML = `<div><b>Results</b></div>
+                   <div style="margin-top:6px">${full}</div>`;
 
+  // Compute payouts from top 3
   const out = document.getElementById('payouts');
   const [w1,w2,w3]=podium.map(p=>p.id);
   let html = '';
@@ -516,7 +531,7 @@ function endRace(orderNow){
   out.innerHTML = html || '<div class="small">No valid bets were placed.</div>';
   document.getElementById('resultArea').classList.remove('hidden');
   if(anyWin) playSfx('sfxWin'); else playSfx('sfxLose');
-  send({type:'finish', final, podium, bets});
+  send({type:'finish', final: finalIds, podium, bets});
 }
 
 /***** Player view handling *****/
@@ -524,9 +539,10 @@ function handleIncoming(msg){
   const bet = document.getElementById('screenBet');
   const race = document.getElementById('screenRace');
   if(msg.type==='card'){
+    window.__playerCard = msg.card; // stash for later name lookups
     document.getElementById('raceNo').textContent = msg.raceNumber;
     const tbody = document.querySelector('#tblCard tbody');
-    tbody.innerHTML = msg.card.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td class=\"odds\">1:${r.odds}</td><td class=\"odds\">${r.winPct.toFixed(1)}%</td></tr>`).join('');
+    tbody.innerHTML = msg.card.map(r=>`<tr><td>${laneBadgeHTML(r.id)}</td><td>${r.name}</td><td class=\"odds\">1:${r.odds}</td><td class=\"odds\">${r.winPct.toFixed(1)}%</td></tr>`).join('');
     // hide DM-only controls (no :has for broad compat)
     const betSection = document.getElementById('bets')?.closest('section');
     if(betSection) betSection.classList.add('hidden');
@@ -541,11 +557,12 @@ function handleIncoming(msg){
     setLeaderText(msg.order);
   }
   if(msg.type==='finish'){
-    const podium = msg.podium;
+    const finalIds = msg.final;
     const pod = document.getElementById('podium');
-    pod.innerHTML = `<div>1st: <b>${podium[0].name}</b> (1:${podium[0].odds})</div>
-                     <div>2nd: ${podium[1].name} (1:${podium[1].odds})</div>
-                     <div>3rd: ${podium[2].name} (1:${podium[2].odds})</div>`;
+    const nm = id=> (window.__playerCard||[]).find(r=>r.id===id)?.name || id;
+    const full = finalIds.map((id,i)=>`${i+1}. ${nm(id)}`).join('<br>');
+    pod.innerHTML = `<div><b>Results</b></div>
+                     <div style=\"margin-top:6px\">${full}</div>`;
     document.getElementById('resultArea').classList.remove('hidden');
   }
 }
@@ -591,9 +608,22 @@ popBtn.addEventListener('click', ()=>{
   console.assert(document.querySelectorAll('#tblCard tbody tr').length===8, 'Expected 8 axebeaks in card');
   // Test 3: start button wired
   console.assert(typeof startRace==='function', 'startRace missing');
-  // Expose manual test for race layout
+  // Test 4: core globals present
+  console.assert(typeof CONFIG==='object' && typeof CONFIG.spice==='number', 'CONFIG missing');
+  console.assert(typeof handleIncoming==='function', 'handleIncoming missing');
+  // Test 5: dropdown labels begin with circled digits and contain no raw numeric prefix artifacts
+  (function(){
+    refreshBetPickers();
+    const anyOpt = document.querySelector('select[data-key="pick"] option[value="1"]');
+    console.assert(anyOpt && /[❶-❽]/.test(anyOpt.textContent), 'Expected circled-digit prefix in Axebeak picker');
+    console.assert(!/\$\{r\.id\}\./.test(document.body.innerHTML), 'Unexpected leftover template text in document');
+  })();
+  // Manual race layout test
   window.__runTests = () => {
     collectBets();
+    newRaceCard();
+    const firstCell = document.querySelector('#tblCard tbody tr td');
+    console.assert(firstCell && /[❶-❽]/.test(firstCell.textContent), 'Expected circled digit badge in first column');
     startRace();
     setTimeout(()=>{
       const lanes=[...document.querySelectorAll('#track .lane')];
