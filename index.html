@@ -199,7 +199,7 @@ for(let i=0;i<6;i++){
 }
 
 function refreshBetPickers(){
-  document.querySelectorAll('select[data-key="pick"]').forEach(sel=>{
+  document.querySelectorAll('select[data-key=\"pick\"]').forEach(sel=>{
     const opts = card.map(r=>`<option value="${r.id}">${CIRCLED[r.id-1]||r.id} ${r.name}</option>`).join('');
     sel.innerHTML = '<option value="">— choose —</option>' + opts;
   });
@@ -208,10 +208,10 @@ function refreshBetPickers(){
 function collectBets(){
   bets = [];
   document.querySelectorAll('#bets > .card').forEach((wrap,idx)=>{
-    const type = wrap.querySelector('select[data-key="type"]').value;
-    const pick = parseInt(wrap.querySelector('select[data-key="pick"]').value||0,10);
-    const amt = parseInt(wrap.querySelector('input[data-key="amt"]').value||0,10);
-    const sum = wrap.querySelector('[data-key="summary"]');
+    const type = wrap.querySelector('select[data-key=\"type\"]').value;
+    const pick = parseInt(wrap.querySelector('select[data-key=\"pick\"]').value||0,10);
+    const amt = parseInt(wrap.querySelector('input[data-key=\"amt\"]').value||0,10);
+    const sum = wrap.querySelector('[data-key=\"summary\"]');
     if(pick && amt>=1){
       const r = card.find(x=>x.id===pick);
       sum.textContent = `${type.toUpperCase()} on ${r ? r.name : '—'} — ${amt} gp at 1:${r.odds}`;
@@ -225,12 +225,12 @@ function collectBets(){
 betsRoot.addEventListener('change', collectBets);
 
 betsRoot.addEventListener('click', (e)=>{
-  const btn = e.target.closest('button[data-key="clear"]');
+  const btn = e.target.closest('button[data-key=\"clear\"]');
   if(!btn) return;
   const wrap = btn.closest('.card');
-  wrap.querySelector('select[data-key="pick"]').value = '';
-  wrap.querySelector('input[data-key="amt"]').value = '';
-  wrap.querySelector('[data-key="summary"]').textContent = '—';
+  wrap.querySelector('select[data-key=\"pick\"]').value = '';
+  wrap.querySelector('input[data-key=\"amt\"]').value = '';
+  wrap.querySelector('[data-key=\"summary\"]').textContent = '—';
   collectBets();
 });
 
@@ -325,6 +325,7 @@ function startRace(){
     const img = document.createElement('img');
     img.className='ax';
     img.style.top = `${((i+0.5)/8)*100}%`;
+    img.style.left = '10px'; // consistent start line for all
     img.src = `assets/axebeak${i+1}.gif`;
     img.alt = `Axebeak ${i+1}`;
     img.dataset.id = String(i+1);
@@ -344,6 +345,7 @@ function startRace(){
 function beginMotion(){
   const track = document.getElementById('track');
   const finishX = track.clientWidth - 60;
+  const startX = 10;
   const imgs = [...track.querySelectorAll('img.ax')];
   imgs.forEach((img,i)=>{ img.src = `assets/axebeakrun${i+1}.gif`; });
 
@@ -370,10 +372,15 @@ function beginMotion(){
   const mood = rollRaceMood();
 
   // Precompute target FINISH TIME for each runner following the (possibly tweaked) order
+  // Invisible checkpoint fractions along the track (position-based, not time)
+  const cpFractions = [0.08,0.18,0.28,0.40,0.52,0.66,0.80,0.92];
   const startT = performance.now();
   const state = new Map();
   const orderIds = raceOrder.map(r=>r.id);
   const strength = (odds)=> 1/odds; // lower odds => higher strength
+
+  // Tie-break preference map (defined up-front so rankNow can close over it)
+  const __finishPref = new Map();
 
   // Optionally create a surprise winner (rare, weighted by odds to avoid constant longshots)
   let effectiveOrder = [...orderIds];
@@ -405,19 +412,39 @@ function beginMotion(){
     finishTimes.set(curId, finishTimes.get(prevId) + adjGap);
   }
 
+  // Now that effectiveOrder is known, preload tie-break preferences
+  __finishPref.clear();
+  effectiveOrder.forEach((id,idx)=> __finishPref.set(id, idx));
+
   // Per-runner motion state
   imgs.forEach(img=>{
     const id = +img.dataset.id;
     const r = card.find(x=>x.id===id);
     state.set(id, {
-      x: 10,
+      x: parseFloat(img.style.left)||10,
       base: 60 + 120*strength(r.odds),
       phase: Math.random()*Math.PI*2,
+      // progress ceiling exponent (lower => faster early progress)
+      progExp: ([0.88,0.82,0.78][mood.idx] || 0.85) + (Math.random()*0.12 - 0.06),
+      // transient surges / drags
+      boost: 0, boostT: 0,
+      drag: 0,  dragT: 0,
+      // checkpoint control
+      cp: 0,
+      segMul: 1,
+      segMulTarget: 1,
     });
   });
 
   // Helpers
-  const rankNow = ()=>[...imgs].sort((a,b)=>state.get(+b.dataset.id).x - state.get(+a.dataset.id).x).map(n=>+n.dataset.id);
+  const rankNow = ()=>[...imgs].sort((a,b)=>{
+    const ax = state.get(+a.dataset.id).x;
+    const bx = state.get(+b.dataset.id).x;
+    const dx = bx - ax; // descending by x
+    if(Math.abs(dx) > 0.6) return dx;
+    // tie-ish: prefer earlier finisher from predetermined order
+    return (__finishPref.get(+a.dataset.id) ?? 99) - (__finishPref.get(+b.dataset.id) ?? 99);
+  }).map(n=>+n.dataset.id);
   function smoothNoise(id, t){
     const st = state.get(id);
     return Math.sin((t*0.7) + st.phase) * mood.noise1
@@ -426,6 +453,7 @@ function beginMotion(){
 
   // Track finish flags per axebeak so we can wait for full field
   const finished = new Set();
+  const finishedOrder = []; // lock-in order as birds cross the line
 
   // Main loop
   function tick(){
@@ -448,20 +476,61 @@ function beginMotion(){
 
       let speed = ideal*mood.idealBlend + baseline*mood.baselineBlend + noise;
 
+      // random surges and slowdowns for organic back-and-forth
+      if(st.boostT<=0 && Math.random()<0.02){ st.boost = 40 + Math.random()*70; st.boostT = 0.5 + Math.random()*1.0; }
+      if(st.dragT<=0  && Math.random()<0.012){ st.drag  = 30 + Math.random()*50; st.dragT  = 0.4 + Math.random()*0.9; }
+      if(st.boostT>0){ speed += st.boost; st.boost *= 0.92; st.boostT -= 1/60; }
+      if(st.dragT>0){  speed -= st.drag;  st.drag  *= 0.90; st.dragT  -= 1/60; }
+
       const jitterAmp = (mood.jitter * (1-phase)) * (0.6 + 0.4*strength(r.odds));
       speed += (Math.random()-0.5) * jitterAmp;
-      speed = Math.max(40, Math.min(speed, 240));
 
-      st.x = Math.min(finishX, st.x + speed*(1/60));
+      // —— Invisible checkpoint controller ——
+      // Compare position-progress (pX) with expected time-progress at this runner's schedule.
+      const pX = Math.max(0, Math.min(1, (st.x - startX)/(finishX - startX)));
+      while(st.cp < cpFractions.length && pX >= cpFractions[st.cp]){
+        const expectedP = Math.min(0.995, Math.pow(t/targetT, st.progExp));
+        const deficit = expectedP - pX; // + = behind schedule, - = ahead
+        let target = st.segMulTarget;
+        if(deficit > 0.01){
+          // Behind schedule → nudge faster for next segment
+          target = 1.08 + Math.min(0.25, deficit*1.6) + (Math.random()-0.5)*0.08;
+        }else if(deficit < -0.01){
+          // Ahead of schedule → cool off a bit
+          target = 0.92 - Math.min(0.20, (-deficit)*1.4) + (Math.random()-0.5)*0.08;
+        }else{
+          // On schedule → slight randomness so pack breathes
+          target = 1.0 + (Math.random()-0.5)*0.04;
+        }
+        st.segMulTarget = Math.max(0.75, Math.min(1.35, target));
+        st.cp++;
+      }
+      // Smoothly ease toward target to avoid jerks
+      st.segMul += (st.segMulTarget - st.segMul) * 0.08;
+      speed *= st.segMul;
+
+      speed = Math.max(40, Math.min(speed, 260));
+
+      let nextX = Math.min(finishX, st.x + speed*(1/60));
+      // Progress ceiling instead of a hard wall; allows racing early without finishing too soon
+      const p = Math.max(0, Math.min(1, (t/targetT)));
+      const progCeil = startX + (finishX-startX) * Math.min(0.995, Math.pow(p, state.get(id).progExp));
+      if(nextX > progCeil) nextX = Math.max(st.x, progCeil);
+      st.x = Math.max(st.x, nextX);
+      img.style.left = `${st.x}px`;
       img.style.left = `${st.x}px`;
 
       // Mark finished when at/after planned time or visually at finish
       if(!finished.has(id) && (t >= targetT || st.x >= finishX-0.5)){
         finished.add(id);
+        if(!finishedOrder.includes(id)) finishedOrder.push(id); // lock this place now
       }
     });
 
-    const order = rankNow();
+    // Build display order with locked finishers first, then current running order
+    const runningIds = imgs.map(n=>+n.dataset.id).filter(id=>!finished.has(id));
+    const runningOrder = rankNow().filter(id=>runningIds.includes(id));
+    const order = [...finishedOrder, ...runningOrder];
     setLeaderText(order);
     send({type:'progress', order});
 
@@ -469,6 +538,8 @@ function beginMotion(){
     const allFinished = orderIds.every(id=> finished.has(id));
     if(allFinished){
       imgs.forEach(img=>{ const id=+img.dataset.id; if(state.get(id).x>finishX-2){ state.get(id).x=finishX; img.style.left = `${finishX}px`; }});
+      // lock leaders to the precomputed final order before rendering results
+      setLeaderText(effectiveOrder);
       endRace(order, effectiveOrder);
       return;
     }
@@ -618,7 +689,8 @@ popBtn.addEventListener('click', ()=>{
     console.assert(anyOpt && /[❶-❽]/.test(anyOpt.textContent), 'Expected circled-digit prefix in Axebeak picker');
     console.assert(!/\$\{r\.id\}\./.test(document.body.innerHTML), 'Unexpected leftover template text in document');
   })();
-  // Manual race layout test
+  // Manual race layout test (opt-in to avoid disrupting normal flow)
+  // Enable by adding ?debugTests=1 to the URL or setting localStorage.axeDebugTests = '1'
   window.__runTests = () => {
     collectBets();
     newRaceCard();
@@ -633,6 +705,12 @@ popBtn.addEventListener('click', ()=>{
       console.log('Lane tops:', ys);
     }, 1000);
   };
+  // If explicitly requested, run __runTests automatically
+  try{
+    const params = new URLSearchParams(location.search);
+    const want = params.get('debugTests')==='1' || localStorage.getItem('axeDebugTests')==='1';
+    if(want){ window.__runTests(); }
+  }catch(e){}
 })();
 </script>
 </body>
