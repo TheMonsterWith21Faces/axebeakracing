@@ -144,7 +144,6 @@ Gravy Boat
 Balloon Vendor
 Jelly Donut
 RGB Case Mod
-Can of Beans
 Vintage Salami
 Tainted Bloodline
 Sorted Recyclables 
@@ -210,7 +209,6 @@ The Word
 Phantom Pain
 Temu Chocobo
 Hot Dog Bathwater
-BEANS
 Shameful Embarrassment
 Oops! All Berries
 Montreal Screwjob
@@ -249,4 +247,5 @@ Pool's Closed
 Can't Triforce
 Antifreeze Wine
 Careless Whisper
+
 
